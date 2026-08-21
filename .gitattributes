@@ -14,7 +14,6 @@ LICENSE text eol=lf
 *.txt text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
-Dockerfile text eol=lf
 *.conf text eol=lf
 
 # Scripts launched directly by Windows keep CRLF.

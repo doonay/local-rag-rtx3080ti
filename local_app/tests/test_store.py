@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from api.services.embedder_client import HybridEmbedding, SparseVector
+from local_app.embeddings import HybridEmbedding, SparseVector
 from local_app.store import LocalVectorStore
 
 

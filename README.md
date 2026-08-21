@@ -18,28 +18,25 @@
 
 Пайплайн запроса:
 ```text
-браузер → API → BGE-M3 dense+sparse → Qdrant RRF → Qwen3 Reranker 0.6B → Qwen3 8B AWQ → API
-             CPU                                      GPU                  GPU
+браузер → локальный API → BGE-M3 dense+sparse → Qdrant Local → Qwen3 Reranker 0.6B → Qwen3 8B GGUF
+                         CPU                            CPU          GPU                  GPU (llama.cpp)
 ```
 
 ## Почему такой GPU-профиль
 
-`Qwen/Qwen3-8B-AWQ` работает в non-thinking режиме и реалистично помещается на 3080 Ti. vLLM ограничен 70% VRAM (примерно 8.6 ГБ), оставшаяся память нужна `Qwen3-Reranker-0.6B` и CUDA-контексту. BGE-M3 работает на CPU, иначе три модели будут конкурировать за 12 ГБ и периодически падать с OOM. Подробное обоснование — в [docs/MODELS.md](docs/MODELS.md).
-
-14B AWQ на этой карте возможна только с коротким контекстом и переносом reranker на CPU, но для стабильного постоянно работающего стека её использовать не стоит.
+`Qwen3-8B-Q4_K_M.gguf` запускается через llama.cpp на GPU. `Qwen3-Reranker-0.6B` также использует GPU, а BGE-M3 и встроенный Qdrant Local работают на CPU. Такой профиль рассчитан на 12 ГБ VRAM и не требует отдельных серверов.
 
 ## Требования
 - Windows 10;
 - актуальный NVIDIA-драйвер;
 - 32 ГБ RAM желательно, 24 ГБ — практический минимум;
-- 15 ГБ свободного места на первый pull/build и кэши моделей.
+- 15 ГБ свободного места на установку и кэши моделей.
 
 Проверенная карта в этой системе: RTX 3080 Ti, 12 288 MiB, compute capability 8.6, драйвер 591.74.
 
-Web UI: <http://localhost:3000>, Swagger: <http://localhost:8000/docs>, Qdrant: <http://localhost:6333/dashboard>.
+Web UI: <http://localhost:8000>, Swagger: <http://localhost:8000/docs>. Qdrant работает внутри приложения и не открывает отдельный порт или dashboard.
 
 ## Лицензия и сторонние компоненты
 Исходный код этого репозитория распространяется по лицензии [MIT](LICENSE).
 
-Лицензия MIT относится только к коду репозитория и не изменяет условия использования сторонних моделей и инструментов. Веса моделей в репозиторий не входят и скачиваются из официальных источников. Перед использованием и распространением проверьте актуальные условия в карточках [Qwen3-8B-AWQ](https://huggingface.co/Qwen/Qwen3-8B-AWQ), [Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B), [BGE-M3](https://huggingface.co/BAAI/bge-m3) и в репозитории [llama.cpp](https://github.com/ggml-org/llama.cpp).
-
+Лицензия MIT относится только к коду репозитория и не изменяет условия использования сторонних моделей и инструментов. Веса моделей в репозиторий не входят и скачиваются из официальных источников. Перед использованием и распространением проверьте актуальные условия в карточках [Qwen3-8B-GGUF](https://huggingface.co/Qwen/Qwen3-8B-GGUF), [Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B), [BGE-M3](https://huggingface.co/BAAI/bge-m3) и в репозитории [llama.cpp](https://github.com/ggml-org/llama.cpp).

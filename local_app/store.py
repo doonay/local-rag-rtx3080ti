@@ -3,7 +3,7 @@ from typing import Any, Sequence
 
 from qdrant_client import QdrantClient, models
 
-from api.services.embedder_client import HybridEmbedding
+from .embeddings import HybridEmbedding
 
 
 class LocalVectorStore:

@@ -1,1 +1,1 @@
-"""Native Windows application profile without Docker."""
+"""Native Windows application."""

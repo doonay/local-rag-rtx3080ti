@@ -16,8 +16,6 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from api.routes.ask import AskRequest, AskResponse, Source, SYSTEM_PROMPT
-from api.services.llm_client import LLMClient
 from document_processor.chunker import DocumentChunker
 from document_processor.cleaner import clean_text
 from document_processor.main import decode_text, extract_text_from_pdf
@@ -25,6 +23,8 @@ from embedder_service.config import config as embedding_config
 from embedder_service.model_loader import EmbeddingModel
 from reranker_service import main as reranker
 
+from .contracts import AskRequest, AskResponse, Source, SYSTEM_PROMPT
+from .llm_client import LLMClient
 from .store import LocalVectorStore
 
 
@@ -239,7 +239,7 @@ async def ask_question(request: AskRequest) -> AskResponse:
         return AskResponse(answer="Сначала загрузите хотя бы один документ.", sources=[])
     try:
         query_embedding = (await run_in_threadpool(runtime.embedder.encode, [request.question]))[0]
-        from api.services.embedder_client import HybridEmbedding, SparseVector
+        from .embeddings import HybridEmbedding, SparseVector
 
         embedding = HybridEmbedding(
             dense=query_embedding.dense,

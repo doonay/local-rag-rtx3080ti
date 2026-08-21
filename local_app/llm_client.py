@@ -10,8 +10,10 @@ class LLMClient:
         model: str | None = None,
         timeout: float = 240.0,
     ):
-        self.base_url = (base_url or os.getenv("VLLM_URL", "http://vllm:8000")).rstrip("/")
-        self.model = model or os.getenv("LLM_MODEL", "Qwen/Qwen3-8B-AWQ")
+        self.base_url = (
+            base_url or os.getenv("LLAMA_URL", "http://127.0.0.1:8001")
+        ).rstrip("/")
+        self.model = model or os.getenv("LLM_MODEL", "Qwen3-8B-Q4_K_M.gguf")
         self.client = httpx.AsyncClient(timeout=timeout)
 
     async def generate(
