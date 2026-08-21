@@ -7,6 +7,6 @@ pydantic==2.10.4
 PyMuPDF==1.24.13
 python-multipart==0.0.20
 qdrant-client==1.19.0
-sentencepiece==0.2.0
+sentencepiece==0.2.1
 transformers==5.15.1
 uvicorn[standard]==0.34.0
