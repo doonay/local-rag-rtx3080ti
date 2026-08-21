@@ -1,4 +1,5 @@
 -r api/requirements.txt
 -r document_processor/requirements.txt
+qdrant-client==1.19.0
 pytest==9.1.1
 pytest-asyncio==1.4.0
