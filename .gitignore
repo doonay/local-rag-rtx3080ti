@@ -11,6 +11,12 @@ htmlcov/
 venv/
 .local/
 
+# Downloaded model weights must never be committed.
+*.gguf
+*.safetensors
+*.pt
+*.pth
+
 # Local configuration and tooling
 .env
 .idea/
