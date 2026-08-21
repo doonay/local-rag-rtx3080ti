@@ -1,0 +1,14 @@
+.git
+.env
+.idea
+.vscode
+.pytest_cache
+.venv-local
+.local
+**/__pycache__
+**/*.pyc
+**/tests
+archive
+docs
+*.png
+*.log

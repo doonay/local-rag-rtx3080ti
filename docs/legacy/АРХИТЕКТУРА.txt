@@ -1,0 +1,132 @@
+Контейнеры:
+docker-compose
+├── api: (Fastapi)
+├── document_processor (Parser: PyMuPDF, Cleaner: свой код, Chunker: RecursiveCharacterTextSplitter)
+├── embedder: BGE-M3
+├── qdrant
+├── reranker: BGE-reranker-v2-m3
+└── vllm: Qwen2.5-14B-AWQ через vLLM
+
+
+Контракт данных между сервисами.
+Заранее определить формат DocumentChunk, который ходит между ingestion → embedder → qdrant → reranker.
+Если этот формат стабилен, дальше можно менять любые модели и реализации без переделки всей системы.
+
+API - готовый контейнер с фастапи на борту, который я потом отдельно настраиваю с CI/CD
+Два разных пайплайна:
+Ingestion: API загрузка документации -> PDF -> Parser -> Cleaner -> Chunker -> Embedder -> Qdrant
+и
+Query: API запрос пользователя -> Embedder -> Qdrant -> Reranker -> vLLM -> API ответ пользователю
+
+---
+ingestion (document_processor) - Беру контейнер Debian Slim (например python:3.12-slim), в нем пишу код с CI/CD
+Есть готовые библиотеки. Например: from langchain_text_splitters import SemanticChunker
+---
+document_processor/
+├── parsers/ # превдащает все присланные доки в текст: pdf, docx, pptx, xlsx html md txt -> обычный текст
+│    ├── pdf.py
+│    ├── docx.py
+│    └── html.py
+│
+├── cleaner.py # чистит текст: text -> убрать лишние переносы -> убрать двойные пробелы -> нормализовать Unicode -> убрать номера страниц -> убрать колонтитулы
+│
+├── chunker.py # разбивает документ при загрузке на смысловые чанки, использовать overlap.
+│
+└── main.py
+
+Возможные источники: PDF, DOCX, Markdown, HTML, Confluence, Git, text... и так далее, буду дописывать по мере продвижения
+
+Parser - PDF бывают разные: Нормальный PDF -PyMuPDF - text, Скан PDF - OCR - text... и так далее, буду дописывать по мере продвижения
+Cleaner: text - normalize unicode - remove headers - remove footers - remove garbage - clean text
+Chunker - Не начинать с SemanticChunker. Подумать, поискать другое варианты разбивок, самый простой RecursiveCharacterTextSplitter.
+
+-----
+
+embedder - Есть готовые контейнеры с sentence-transformers. Например SentenceTransformer("BAAI/bge-m3")
+Контейнер: Python - sentence-transformers - bge-m3
+API запрос: POST /embed {"texts": ["chunk 1", "chunk 2", "chunk 3"]}
+API ответ: {"embeddings": [[0.123,0.456], [0.234,0.567]]}
+
+-------------
+qdrant - Есть готовый контейнер qdrant/qdrant
+В Qdrant хранить не только vector а, но еже и metadata: {"text": "текст чанка","source": "manual.pdf","page": 12,"document_id": "123","created": "2026-07-10"}
+Потом это позволит делать: фильтр по документам; удаление документов; цитирование источников.
+
+-------------
+reranker - Это контейнер, внутри которого одна модель. Например BAAI/bge-reranker-v2-m3 или Qwen3-Reranker
+У него API: POST /rerank {query, documents[]} Ответ: [0.98,0.92,0.74,...]
+FastAPI берет Top-5 и отправляет их в vLLM. Qdrant - Top-50 - Reranker - Top-5 - vLLM
+
+-------------
+vLLM + Qwen2.5-14B-Instruct-AWQ - Поднимается официальный контейнер.
+Он уже предоставляет OpenAI-совместимый API: POST /v1/chat/completions или другую AWQ/GPTQ модель.
+Для RTX 3080 Ti 12GB это реалистичнее.
+
+
+==========
+Полный пайплайн запроса (Query)
+# api/routes/ask.py
+@app.post("/ask")
+async def ask(request: QueryRequest):
+    # 1. Эмбеддинг вопроса
+    query_embedding = await embed_text(request.question)
+    
+    # 2. Поиск в Qdrant (Top-50)
+    search_results = await qdrant_search(
+        vector=query_embedding,
+        limit=50,
+        filter={"document_id": request.document_id} if request.document_id else None
+    )
+    
+    # 3. Ранжирование (Reranker)
+    reranked = await rerank(
+        query=request.question,
+        documents=[r.payload["text"] for r in search_results]
+    )
+    
+    # 4. Берем Top-5
+    top_chunks = reranked[:5]
+    
+    # 5. Формируем промпт
+    context = "\n\n".join([chunk.text for chunk in top_chunks])
+    prompt = f"""
+    Используя контекст ниже, ответь на вопрос.
+    
+    Контекст:
+    {context}
+    
+    Вопрос: {request.question}
+    
+    Ответ:
+    """
+    
+    # 6. Отправляем в vLLM
+    answer = await llm_generate(prompt)
+    
+    # 7. Возвращаем ответ с источниками
+    return {
+        "answer": answer,
+        "sources": [
+            {
+                "text": chunk.text,
+                "source": chunk.metadata["source"],
+                "page": chunk.metadata.get("page")
+            }
+            for chunk in top_chunks
+        ]
+    }
+
+🚀 Дорожная карта реализации
+Неделя 1: Написать common/schemas.py + API-эндпоинты (заглушки)
+Неделя 2: document_processor (PDF → чанки)
+Неделя 3: Embedder + интеграция с Qdrant (Ingestion pipeline)
+Неделя 4: Reranker + vLLM (Query pipeline)
+Неделя 5: Стриминг ответов + ошибки + логирование
+Неделя 6: CI/CD + деплой + мониторинг
+
+💡 Дополнительные советы
+Мониторинг: Добавьте Prometheus метрики для каждого сервиса (латентность, количество запросов, ошибки)
+Graceful degradation: Если vLLM упал, API должен возвращать "Сервис временно недоступен" без падения всего приложения
+Кэширование: Частые вопросы можно кэшировать в Redis (эмбеддинг + ответ)
+Очереди: При большой нагрузке на ingestion, используйте Celery или Redis Queue, чтобы не блокировать API
+Эта архитектура готова к продакшену. Отличная работа! 🔥

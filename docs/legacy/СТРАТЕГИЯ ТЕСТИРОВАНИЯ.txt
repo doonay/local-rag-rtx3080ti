@@ -1,0 +1,716 @@
+Стратегия тестирования (Пирамида тестов)
+
+📁 Структура проекта для тестов
+rag-server/
+├── api/
+│   ├── main.py
+│   ├── routes/
+│   │   ├── ask.py
+│   │   └── upload.py
+│   ├── services/
+│   │   ├── embedder_client.py
+│   │   ├── qdrant_client.py
+│   │   ├── reranker_client.py
+│   │   └── llm_client.py
+│   └── tests/
+│       ├── __init__.py
+│       ├── unit/
+│       │   ├── test_schemas.py
+│       │   └── test_routes.py
+│       ├── integration/
+│       │   ├── test_embedder_client.py
+│       │   ├── test_qdrant_client.py
+│       │   ├── test_reranker_client.py
+│       │   └── test_llm_client.py
+│       └── e2e/
+│           ├── test_ingestion_pipeline.py
+│           └── test_query_pipeline.py
+│
+├── document_processor/
+│   ├── parsers/
+│   ├── cleaner.py
+│   ├── chunker.py
+│   ├── main.py
+│   └── tests/
+│       ├── unit/
+│       │   ├── test_parsers.py
+│       │   ├── test_cleaner.py
+│       │   └── test_chunker.py
+│       └── integration/
+│           └── test_pipeline.py
+│
+├── embedder_service/
+│   ├── main.py
+│   └── tests/
+│       └── test_embedder.py
+│
+├── reranker_service/
+│   ├── main.py
+│   └── tests/
+│       └── test_reranker.py
+│
+├── common/
+│   └── schemas.py
+│
+├── docker-compose.yml
+├── docker-compose.test.yml  # Для тестов с моками
+└── pytest.ini
+
+
+🧱 Уровень 1: Unit-тесты
+1.1 Тесты для схем (contracts)
+common/tests/test_schemas.py
+
+import pytest
+from datetime import datetime
+from common.schemas import DocumentChunk
+
+class TestDocumentChunk:
+    def test_create_chunk(self):
+        chunk = DocumentChunk(
+            text="Test text",
+            metadata={
+                "source": "test.pdf",
+                "page": 1,
+                "document_id": "doc_123"
+            }
+        )
+        
+        assert chunk.id is not None
+        assert chunk.text == "Test text"
+        assert chunk.metadata["source"] == "test.pdf"
+        assert chunk.embedding is None
+    
+    def test_chunk_to_json(self):
+        chunk = DocumentChunk(text="Test", metadata={})
+        json_data = chunk.model_dump_json()
+        
+        assert '"id"' in json_data
+        assert '"text": "Test"' in json_data
+
+1.2 Тесты для Parser
+document_processor/tests/unit/test_parsers.py
+
+import pytest
+from pathlib import Path
+from document_processor.parsers import parse_pdf, parse_docx, parse_html
+
+class TestParsers:
+    def test_parse_pdf(self, sample_pdf_path):
+        """Тестируем парсинг нормального PDF"""
+        with open(sample_pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        
+        text = parse_pdf(pdf_bytes)
+        
+        assert isinstance(text, str)
+        assert len(text) > 0
+        assert "test" in text.lower() or "тест" in text.lower()
+    
+    def test_parse_pdf_empty(self):
+        """Тестируем обработку пустого PDF"""
+        with pytest.raises(ValueError, match="Empty PDF"):
+            parse_pdf(b'')
+    
+    def test_parse_docx(self, sample_docx_path):
+        with open(sample_docx_path, 'rb') as f:
+            docx_bytes = f.read()
+        
+        text = parse_docx(docx_bytes)
+        assert isinstance(text, str)
+        assert len(text) > 0
+    
+    def test_parse_html(self):
+        html = "<html><body><h1>Title</h1><p>Content</p></body></html>"
+        text = parse_html(html.encode())
+        
+        assert "Title" in text
+        assert "Content" in text
+
+Фикстуры для тестов:
+document_processor/tests/conftest.py
+
+import pytest
+from pathlib import Path
+
+@pytest.fixture
+def sample_pdf_path():
+    """Создает тестовый PDF файл"""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    
+    pdf_path = Path("/tmp/test.pdf")
+    c = canvas.Canvas(str(pdf_path), pagesize=letter)
+    c.drawString(100, 750, "Test PDF Content")
+    c.drawString(100, 730, "This is a test document for RAG system.")
+    c.save()
+    
+    yield pdf_path
+    
+    # Cleanup
+    if pdf_path.exists():
+        pdf_path.unlink()
+
+@pytest.fixture
+def sample_docx_path():
+    """Создает тестовый DOCX файл"""
+    from docx import Document
+    
+    docx_path = Path("/tmp/test.docx")
+    doc = Document()
+    doc.add_paragraph("Test DOCX Content")
+    doc.add_paragraph("This is a test document for RAG system.")
+    doc.save(str(docx_path))
+    
+    yield docx_path
+    
+    if docx_path.exists():
+        docx_path.unlink()
+
+1.3 Тесты для Cleaner
+document_processor/tests/unit/test_cleaner.py
+
+import pytest
+from document_processor.cleaner import clean_text
+
+class TestCleaner:
+    def test_remove_extra_newlines(self):
+        text = "Line 1\n\n\n\nLine 2"
+        cleaned = clean_text(text)
+        assert "\n\n" not in cleaned
+    
+    def test_remove_double_spaces(self):
+        text = "This  has   multiple    spaces"
+        cleaned = clean_text(text)
+        assert "  " not in cleaned
+    
+    def test_normalize_unicode(self):
+        text = "Café résumé naïve"
+        cleaned = clean_text(text)
+        # Проверяем, что символы нормализованы (но не потеряны)
+        assert "é" in cleaned or "e" in cleaned
+    
+    def test_remove_page_numbers(self):
+        text = "Some text\nPage 1\nMore text\nPage 2"
+        cleaned = clean_text(text)
+        assert "Page 1" not in cleaned
+        assert "Page 2" not in cleaned
+    
+    def test_remove_headers_footers(self):
+        text = "Header: Confidential\nContent\nFooter: Page 1"
+        cleaned = clean_text(text)
+        assert "Header:" not in cleaned
+        assert "Footer:" not in cleaned
+    
+    def test_full_pipeline(self):
+        raw = """Page 1
+        This is a  test   document.
+        Header: Internal
+        
+        
+        This document contains important information.
+        Footer: Draft"""
+        
+        cleaned = clean_text(raw)
+        
+        assert "Page 1" not in cleaned
+        assert "Header:" not in cleaned
+        assert "Footer:" not in cleaned
+        assert "  " not in cleaned
+        assert "\n\n" not in cleaned
+        assert "important" in cleaned
+
+1.4 Тесты для Chunker
+document_processor/tests/unit/test_chunker.py
+
+import pytest
+from document_processor.chunker import chunk_text
+
+class TestChunker:
+    def test_chunk_size_limit(self):
+        """Проверяем, что чанки не превышают max_size"""
+        text = " ".join(["word"] * 1000)
+        chunks = chunk_text(text, chunk_size=100, overlap=20)
+        
+        for chunk in chunks:
+            assert len(chunk) <= 100
+    
+    def test_chunk_overlap(self):
+        """Проверяем наличие перекрытия между чанками"""
+        text = " ".join([f"sentence_{i}" for i in range(100)])
+        chunks = chunk_text(text, chunk_size=50, overlap=10)
+        
+        # Первый чанк должен содержать конец, который есть в начале второго
+        # Это сложно проверить строго, но можем проверить, что текст не потерян
+        full_text = "".join(chunks)
+        assert len(full_text) >= len(text) * 0.9  # С учетом перекрытия
+    
+    def test_chunk_preserves_sentences(self):
+        """Чанкер должен стараться не резать посередине предложения"""
+        text = "First sentence. Second sentence. Third sentence."
+        chunks = chunk_text(text, chunk_size=20, overlap=0)
+        
+        # Проверяем, что предложения не разорваны посередине
+        for chunk in chunks:
+            # Каждый чанк должен начинаться с заглавной или заканчиваться точкой
+            # Это не строгое требование, но хорошая практика
+            pass
+    
+    def test_empty_text(self):
+        text = ""
+        chunks = chunk_text(text)
+        assert chunks == []
+    
+    def test_short_text(self):
+        text = "Short text"
+        chunks = chunk_text(text, chunk_size=100)
+        assert len(chunks) == 1
+        assert chunks[0] == text
+
+1.5 Тесты для API Routes
+api/tests/unit/test_routes.py
+
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
+from api.main import app
+
+client = TestClient(app)
+
+class TestAskRoute:
+    @patch('api.routes.ask.embedder_client')
+    @patch('api.routes.ask.qdrant_client')
+    @patch('api.routes.ask.reranker_client')
+    @patch('api.routes.ask.llm_client')
+    def test_ask_success(self, mock_llm, mock_reranker, mock_qdrant, mock_embedder):
+        # Мокаем все вызовы
+        mock_embedder.embed.return_value = [0.1, 0.2, 0.3]
+        mock_qdrant.search.return_value = [
+            {"payload": {"text": "Paris is the capital of France"}}
+        ]
+        mock_reranker.rerank.return_value = [
+            {"text": "Paris is the capital of France", "score": 0.95}
+        ]
+        mock_llm.generate.return_value = "The capital of France is Paris."
+        
+        response = client.post(
+            "/ask",
+            json={"question": "What is the capital of France?"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+        assert "sources" in data
+        assert data["answer"] == "The capital of France is Paris."
+    
+    def test_ask_no_question(self):
+        response = client.post("/ask", json={})
+        assert response.status_code == 422  # Validation error
+
+class TestUploadRoute:
+    @patch('api.routes.upload.document_processor')
+    @patch('api.routes.upload.embedder_client')
+    @patch('api.routes.upload.qdrant_client')
+    def test_upload_success(self, mock_qdrant, mock_embedder, mock_processor):
+        # Мокаем
+        mock_processor.process.return_value = [
+            {"id": "1", "text": "chunk1", "metadata": {}},
+            {"id": "2", "text": "chunk2", "metadata": {}}
+        ]
+        mock_embedder.embed.return_value = [[0.1, 0.2], [0.3, 0.4]]
+        mock_qdrant.upsert.return_value = True
+        
+        # Создаем тестовый файл
+        files = {"file": ("test.pdf", b"fake pdf content", "application/pdf")}
+        response = client.post("/upload", files=files)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["chunks_uploaded"] == 2
+
+
+🔗 Уровень 2: Интеграционные тесты
+2.1 Тесты для клиента Embedder
+api/tests/integration/test_embedder_client.py
+
+import pytest
+import httpx
+from api.services.embedder_client import EmbedderClient
+from common.schemas import DocumentChunk
+
+@pytest.mark.integration
+class TestEmbedderClient:
+    @pytest.fixture
+    def embedder_client(self):
+        """Поднимаем реальный embedder контейнер для теста"""
+        # В идеале использовать docker-compose.test.yml
+        return EmbedderClient(base_url="http://localhost:8080")
+    
+    def test_embed_single_text(self, embedder_client):
+        result = embedder_client.embed(["Hello world"])
+        
+        assert len(result) == 1
+        assert len(result[0]) > 0  # Вектор не пустой
+        assert isinstance(result[0][0], float)
+    
+    def test_embed_batch(self, embedder_client):
+        texts = ["First text", "Second text", "Third text"]
+        result = embedder_client.embed(texts)
+        
+        assert len(result) == 3
+        assert len(result[0]) == len(result[1]) == len(result[2])
+    
+    def test_embed_empty(self, embedder_client):
+        with pytest.raises(ValueError, match="No texts provided"):
+            embedder_client.embed([])
+
+2.2 Тесты для Qdrant клиента
+api/tests/integration/test_qdrant_client.py
+
+import pytest
+from api.services.qdrant_client import QdrantClient
+from common.schemas import DocumentChunk
+
+@pytest.mark.integration
+class TestQdrantClient:
+    @pytest.fixture
+    def qdrant_client(self):
+        return QdrantClient(
+            host="localhost",
+            port=6333,
+            collection_name="test_collection"
+        )
+    
+    @pytest.fixture
+    def sample_chunks(self):
+        return [
+            DocumentChunk(
+                id="1",
+                text="Paris is the capital of France",
+                metadata={"source": "test.pdf", "page": 1}
+            ),
+            DocumentChunk(
+                id="2",
+                text="Berlin is the capital of Germany",
+                metadata={"source": "test.pdf", "page": 2}
+            )
+        ]
+    
+    def test_upsert_and_search(self, qdrant_client, sample_chunks):
+        # Подготавливаем векторы (заглушка)
+        embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        
+        # Upsert
+        success = qdrant_client.upsert(sample_chunks, embeddings)
+        assert success is True
+        
+        # Search
+        query_vector = [0.1, 0.2, 0.3]
+        results = qdrant_client.search(query_vector, limit=1)
+        
+        assert len(results) == 1
+        assert results[0]["payload"]["text"] == "Paris is the capital of France"
+    
+    def test_filter_search(self, qdrant_client, sample_chunks):
+        embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        qdrant_client.upsert(sample_chunks, embeddings)
+        
+        # Поиск с фильтром по документу
+        results = qdrant_client.search(
+            query_vector=[0.1, 0.2, 0.3],
+            limit=10,
+            filter={"document_id": "doc_123"}  # Должен вернуть 0
+        )
+        
+        # В зависимости от реализации
+        assert len(results) >= 0
+
+2.3 Тесты для Reranker клиента
+api/tests/integration/test_reranker_client.py
+
+import pytest
+from api.services.reranker_client import RerankerClient
+
+@pytest.mark.integration
+class TestRerankerClient:
+    @pytest.fixture
+    def reranker_client(self):
+        return RerankerClient(base_url="http://localhost:8080")
+    
+    def test_rerank(self, reranker_client):
+        query = "What is the capital of France?"
+        documents = [
+            "Paris is the capital of France",
+            "Berlin is the capital of Germany",
+            "Madrid is the capital of Spain"
+        ]
+        
+        result = reranker_client.rerank(query, documents)
+        
+        assert len(result) == 3
+        # Париж должен быть на первом месте
+        assert "Paris" in result[0]["text"]
+        assert result[0]["score"] > result[1]["score"]
+    
+    def test_rerank_with_top_k(self, reranker_client):
+        query = "What is the capital of France?"
+        documents = ["Paris is capital", "Berlin is capital", "Madrid is capital"]
+        
+        result = reranker_client.rerank(query, documents, top_k=2)
+        
+        assert len(result) == 2
+
+2.4 Тесты для vLLM клиента
+api/tests/integration/test_llm_client.py
+
+import pytest
+from api.services.llm_client import LLMClient
+
+@pytest.mark.integration
+class TestLLMClient:
+    @pytest.fixture
+    def llm_client(self):
+        return LLMClient(base_url="http://localhost:8000")
+    
+    def test_generate(self, llm_client):
+        prompt = "What is the capital of France? Answer in one word."
+        response = llm_client.generate(prompt)
+        
+        assert isinstance(response, str)
+        assert len(response) > 0
+        assert "Paris" in response or "Париж" in response
+    
+    @pytest.mark.asyncio
+    async def test_generate_stream(self, llm_client):
+        prompt = "Write a short poem about coding."
+        
+        chunks = []
+        async for chunk in llm_client.generate_stream(prompt):
+            chunks.append(chunk)
+        
+        assert len(chunks) > 0
+        full_response = "".join(chunks)
+        assert len(full_response) > 0
+
+🚀 Уровень 3: E2E тесты
+3.1 Ingestion Pipeline
+api/tests/e2e/test_ingestion_pipeline.py
+
+import pytest
+from fastapi.testclient import TestClient
+from api.main import app
+import os
+
+client = TestClient(app)
+
+@pytest.mark.e2e
+class TestIngestionPipeline:
+    def test_full_ingestion_workflow(self):
+        # 1. Создаем тестовый PDF
+        pdf_content = """
+        Machine Learning Overview
+        
+        Machine learning is a subset of artificial intelligence.
+        It enables systems to learn from data.
+        
+        Types of ML:
+        1. Supervised Learning
+        2. Unsupervised Learning
+        3. Reinforcement Learning
+        """
+        
+        # Сохраняем как PDF (заглушка)
+        with open("/tmp/test_ml.pdf", "wb") as f:
+            f.write(pdf_content.encode())
+        
+        # 2. Отправляем на загрузку
+        with open("/tmp/test_ml.pdf", "rb") as f:
+            files = {"file": ("test_ml.pdf", f, "application/pdf")}
+            response = client.post("/upload", files=files)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["chunks_uploaded"] > 0
+        
+        # 3. Проверяем, что чанки появились в Qdrant
+        # (зависит от реализации)
+        
+        # 4. Чистим
+        os.remove("/tmp/test_ml.pdf")
+
+3.2 Query Pipeline
+api/tests/e2e/test_query_pipeline.py
+
+import pytest
+from fastapi.testclient import TestClient
+from api.main import app
+import time
+
+client = TestClient(app)
+
+@pytest.mark.e2e
+class TestQueryPipeline:
+    def setup_method(self):
+        """Подготовка: загружаем тестовый документ"""
+        # Загружаем документ (см. предыдущий тест)
+        pass
+    
+    def test_full_query_workflow(self):
+        # 1. Задаем вопрос
+        response = client.post(
+            "/ask",
+            json={"question": "What is machine learning?"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # 2. Проверяем ответ
+        assert "answer" in data
+        assert "sources" in data
+        assert len(data["sources"]) > 0
+        
+        # 3. Проверяем, что ответ связан с контекстом
+        answer = data["answer"].lower()
+        assert "machine learning" in answer or "машинное обучение" in answer
+        
+        # 4. Проверяем источники
+        sources = data["sources"]
+        for source in sources:
+            assert "text" in source
+            assert "source" in source
+    
+    def test_query_with_no_context(self):
+        """Вопрос, на который нет ответа в документах"""
+        response = client.post(
+            "/ask",
+            json={"question": "What is quantum physics?"}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        # Может вернуть "не знаю" или только из знаний модели
+        assert "answer" in data
+
+🛠️ Docker Compose для тестов
+docker-compose.test.yml
+
+version: '3.8'
+
+services:
+  # Для интеграционных тестов поднимаем реальные сервисы
+  test-embedder:
+    build: ./embedder_service
+    ports:
+      - "8080:8080"
+    networks:
+      - test-network
+  
+  test-qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    networks:
+      - test-network
+  
+  test-reranker:
+    build: ./reranker_service
+    ports:
+      - "8081:8080"  # Избегаем конфликта с embedder
+    networks:
+      - test-network
+  
+  test-vllm:
+    image: vllm/vllm-openai:latest
+    command: 
+      - "--model"
+      - "Qwen/Qwen2.5-1.5B-Instruct"  # Маленькая модель для тестов
+      - "--max-model-len"
+      - "2048"
+      - "--gpu-memory-utilization"
+      - "0.5"
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge
+
+=============================================================
+
+📊 Запуск тестов
+1. Unit-тесты (быстрые, без внешних зависимостей)
+pytest api/tests/unit/ document_processor/tests/unit/ -v
+
+2. Integration-тесты (требуют поднятых контейнеров)
+# Поднимаем тестовые контейнеры
+docker-compose -f docker-compose.test.yml up -d
+
+# Ждем готовности
+sleep 10
+
+# Запускаем интеграционные тесты
+pytest api/tests/integration/ -v -m integration
+
+# Останавливаем
+docker-compose -f docker-compose.test.yml down
+
+3. E2E-тесты (требуют полной системы)
+# Вся система должна быть поднята
+docker-compose up -d
+
+# Запускаем E2E
+pytest api/tests/e2e/ -v -m e2e
+📝 pytest.ini
+ini
+[pytest]
+testpaths = api/tests document_processor/tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+
+markers =
+    unit: Unit tests (fast, no external dependencies)
+    integration: Integration tests (require external services)
+    e2e: End-to-end tests (require full system)
+
+addopts =
+    --strict-markers
+    --tb=short
+    --maxfail=1
+
+filterwarnings =
+    ignore::DeprecationWarning
+
+🎯 Итоговый план действий
+Сначала пишем schemas.py и тесты к нему
+
+Пишем unit-тесты для каждого компонента (Parser → Cleaner → Chunker)
+
+Разрабатываем компоненты, прогоняя тесты
+
+Пишем интеграционные тесты для клиентов (Embedder → Qdrant → Reranker → vLLM)
+
+Разрабатываем клиенты, используя TDD
+
+Пишем E2E тесты для полных пайплайнов
+
+Настраиваем CI/CD для автоматического запуска всех тестов
+
+Важно: Начните с одного маленького компонента (например, Cleaner) и полностью покройте его тестами. Потом переходите к следующему. Так вы сможете двигаться итеративно, не теряя фокус.
+
+Готовы начать с первого теста для Cleaner или Parser?
+

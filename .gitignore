@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+.venv-local/
+venv/
+.local/
+
+# Local configuration and tooling
+.env
+.idea/
+.vscode/
+*.log
+
+# Recoverable material moved out of the working tree during cleanup
+archive/

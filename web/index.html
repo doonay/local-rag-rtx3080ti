@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Assistant</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="logo">
+                <span class="icon">🧠</span>
+                <h1>RAG Assistant</h1>
+            </div>
+            
+            <div class="upload-section">
+                <h3>📄 Загрузка документов</h3>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" multiple accept=".txt,.pdf,.docx,.md">
+                    <label for="fileInput">
+                        <span class="icon">📁</span>
+                        <span>Выберите файлы</span>
+                        <span class="hint">или перетащите сюда</span>
+                    </label>
+                </div>
+                <div id="uploadStatus" class="upload-status"></div>
+            </div>
+
+            <div class="documents-list">
+                <h3>📚 Загруженные документы</h3>
+                <div id="docList"></div>
+            </div>
+        </div>
+
+        <!-- Main chat area -->
+        <div class="main">
+            <div class="chat-header">
+                <h2>💬 Чат с документами</h2>
+                <button id="clearChat" class="clear-btn">🗑️ Очистить</button>
+            </div>
+            
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant">
+                    <div class="avatar">🤖</div>
+                    <div class="content">
+                        <p>Привет! Я RAG-ассистент. Загрузите документы и задавайте вопросы по ним.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input">
+                <textarea 
+                    id="questionInput" 
+                    rows="2" 
+                    placeholder="Введите ваш вопрос..."
+                    disabled
+                ></textarea>
+                <button id="sendBtn" disabled>Отправить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
