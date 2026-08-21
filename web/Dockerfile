@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 
 COPY web/index.html /usr/share/nginx/html/index.html
 COPY web/style.css /usr/share/nginx/html/style.css
