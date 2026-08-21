@@ -43,5 +43,3 @@ Web UI: <http://localhost:3000>, Swagger: <http://localhost:8000/docs>, Qdrant: 
 
 Лицензия MIT относится только к коду репозитория и не изменяет условия использования сторонних моделей и инструментов. Веса моделей в репозиторий не входят и скачиваются из официальных источников. Перед использованием и распространением проверьте актуальные условия в карточках [Qwen3-8B-AWQ](https://huggingface.co/Qwen/Qwen3-8B-AWQ), [Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B), [BGE-M3](https://huggingface.co/BAAI/bge-m3) и в репозитории [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
-## Что делать дальше
-Подробный порядок работ находится в [docs/ROADMAP.md](docs/ROADMAP.md). Самые важные следующие шаги: реальный GPU smoke-test, полноценные integration/E2E-тесты, удаление/дедупликация документов, настоящий dense+sparse hybrid search, OCR и измеримый набор RAG-evaluation.
